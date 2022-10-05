@@ -13,6 +13,7 @@ import (
 	"os/signal"
 	"syscall"
 
+	"github.com/ansrivas/fiberprometheus/v2"
 	"github.com/cheetahfox/microservice-test/config"
 	"github.com/cheetahfox/microservice-test/health"
 	"github.com/cheetahfox/microservice-test/router"
@@ -23,6 +24,11 @@ func main() {
 	config := config.Startup()
 
 	mst := fiber.New(config.FiberConfig)
+
+	// Setup basic prometheus metrics
+	prometheus := fiberprometheus.New("MicroService Test v0.01")
+	prometheus.RegisterAt(mst, "/metrics")
+	mst.Use(prometheus.Middleware)
 
 	router.SetupRoutes(mst)
 

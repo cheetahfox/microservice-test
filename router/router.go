@@ -7,10 +7,7 @@ import (
 )
 
 func SetupRoutes(app *fiber.App) {
-	app.Get("/", func(c *fiber.Ctx) error {
-		return c.SendString("Basic Test")
-	})
-	app.Get("/v1/", v1.Get)
+	app.Get("/", v1.Get)
 	app.Get("/healthz", health.GetHealthz)
 	app.Get("/readyz", health.GetReadyz)
 
