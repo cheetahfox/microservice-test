@@ -1,55 +1,107 @@
 package v1
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io/ioutil"
 	"net/http"
 	"os"
 	"strconv"
+	"time"
 
 	"github.com/cheetahfox/microservice-test/health"
 	"github.com/gofiber/fiber/v2"
 )
 
 func Get(c *fiber.Ctx) error {
-
-	raw, err := getRawData()
+	s, err := v1Get()
 	if err != nil {
 		return err
 	}
+	c.Set("Content-Type", "application/json")
 
-	s := string(raw)
-
-	return c.SendString(s)
-	//return c.SendString("v1")
+	return c.SendString(string(s))
 }
 
-type alphaVantageData struct {
-	info     string            `json:"1. Information"`
-	symbol   string            `json:"2. Symbol"`
-	last     string            `json:"3. Last Refreshed"`
-	timezone string            `json:"5. Time Zone"`
-	days     []timeSeriesDaily `json:"Time Series (Daily)"`
+type AlphaVantageData struct {
+	Meta MetaData                   `json:"Meta Data"`
+	Tds  map[string]TimeSeriesDaily `json:"Time Series (Daily)"`
 }
 
-type stockPrices struct {
-	open   string `json:"1. open"`
-	high   string `json:"2. high"`
-	low    string `json:"3. low"`
-	close  string `json:"4. close"`
-	volume string `json:"5. volume"`
+type MetaData struct {
+	Info       string `json:"1. Information"`
+	Symbol     string `json:"2. Symbol"`
+	Last       string `json:"3. Last Refreshed"`
+	Outputsize string `json:"4. Output Size"`
+	Timezone   string `json:"5. Time Zone"`
 }
 
-type timeSeriesDaily struct {
-	day    string
-	prices stockPrices
+type TimeSeriesDaily struct {
+	Open   string `json:"1. open"`
+	High   string `json:"2. high"`
+	Low    string `json:"3. low"`
+	Close  string `json:"4. close"`
+	Volume string `json:"5. volume"`
 }
 
 type runningValues struct {
 	apiKey string
 	ndays  int
 	symbol string
+}
+
+type Formated struct {
+	Symbol       string                     `json:"Stock Symbol"`
+	AverageClose string                     `json:"Average Closing Price"`
+	Tds          map[string]TimeSeriesDaily `json:"Time Series (Daily)"`
+}
+
+/*
+Main v1 Get func: most of everthing is done here.
+We call the helpper func to fetch the data, we compute average data
+*/
+func v1Get() ([]byte, error) {
+	var output Formated
+	output.Tds = make(map[string]TimeSeriesDaily)
+
+	// Get the data from the AlaphVantage API
+	raw, err := getRawData()
+	if err != nil {
+		return nil, err
+	}
+	data, err := parseData(raw)
+	if err != nil {
+		return nil, err
+	}
+
+	// Get a list of the last ndays
+	days, err := listOfDays(data)
+	if err != nil {
+		return nil, err
+	}
+
+	// Start formating the output Struct
+	output.Symbol = data.Meta.Symbol
+
+	var closedtotal float64
+	for index := range days {
+		if val, key := data.Tds[days[index]]; key {
+			closed, err := strconv.ParseFloat(val.Close, 64)
+			if err == nil {
+				closedtotal = closedtotal + closed
+			}
+			output.Tds[days[index]] = val
+		}
+	}
+	// only compute the average if we actually have data
+	if len(output.Tds) != 0 {
+		closedAverage := closedtotal / float64(len(output.Tds))
+		output.AverageClose = fmt.Sprintf("%.2f", closedAverage)
+	}
+
+	return json.Marshal(output)
+
 }
 
 // Verify and Fetch the required Env values
@@ -81,13 +133,13 @@ func fetchValues() (runningValues, error) {
 	if err != nil {
 		fmt.Println("Ndays env value isn't a number")
 		health.ApiReady = false
-		return values, errors.New("Ndays env not an int")
+		return values, errors.New("ndays env not an int")
 	}
 	// we default to format compact in the api so we need to have NDAYS set to less than 100 and more than 0
 	if ndays > 100 || ndays <= 0 {
 		fmt.Println("Ndays outside the require range.")
 		health.ApiReady = false
-		return values, errors.New("Ndays outside of range")
+		return values, errors.New("ndays outside of range")
 	}
 	values.ndays = ndays
 
@@ -121,7 +173,7 @@ func getRawData() ([]byte, error) {
 	// check the http status code
 	if response.StatusCode != 200 {
 		fmt.Printf("WARNING: Request Status Code %d %s\n", response.StatusCode, response.Status)
-		return nil, errors.New("Not 200 return")
+		return nil, errors.New("not 200 return")
 	}
 
 	// Read the body response
@@ -134,9 +186,38 @@ func getRawData() ([]byte, error) {
 	return bodybytes, nil
 }
 
-func parseData([]byte) (alphaVantageData, error) {
-	var aData alphaVantageData
+// Parse raw data from the url fetch : this was way easier than I remember doing with XML.
+func parseData(raw []byte) (AlphaVantageData, error) {
+	var aData AlphaVantageData
 
-	return aData, nil
+	err := json.Unmarshal(raw, &aData)
+	return aData, err
 
+}
+
+// Looks at current time and gets an array of dates ndays into the past
+func listOfDays(data AlphaVantageData) ([]string, error) {
+	var days []string
+	values, err := fetchValues()
+	if err != nil {
+		return nil, errors.New("error while validating env values")
+	}
+
+	// Make sure the current timezone matches the data
+	location, err := time.LoadLocation(data.Meta.Timezone)
+	if err != nil {
+		return days, err
+	}
+	now := time.Now().In(location)
+	days = append(days, now.Format("2006-01-02"))
+
+	pastDays := 1
+	for pastDays < values.ndays {
+		past := now.AddDate(0, 0, -pastDays)
+		days = append(days, past.Format("2006-01-02"))
+		pastDays++
+
+	}
+
+	return days, nil
 }
