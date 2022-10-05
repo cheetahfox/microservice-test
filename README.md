@@ -22,8 +22,13 @@ Then run the following docker build command to build the image locally.
 sudo docker build --no-cache -t cheetahfox/microservice-project:0.02 .
 ````
 
+To run it just from docker use the following command while in the cloned repo and after you have built it locally. 
+````
+sudo docker run --publish 2200:2200 --env-file TestENV.sh cheetahfox/microservice-project:0.02
+````
+
 # Running in Kubernetes
-I have included a deployment.yaml file that creates the following Kubernetes resources. 
+I have included a deployment.yaml file that creates the following Kubernetes resources. Operation in Kubernetes is the perfered method of running this project. 
 
 ### Resources
 * configmap/microservice-config
