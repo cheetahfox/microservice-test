@@ -23,7 +23,9 @@ func Startup() Configuration {
 	}
 
 	for index := range requiredEnvVars {
-		if os.Getenv(requiredEnvVars[index]) == "" {
+		// check for empty vars
+		_, present := os.LookupEnv(requiredEnvVars[index])
+		if !present {
 			log.Fatalf("Missing %s Env var \n", requiredEnvVars[index])
 		}
 	}
