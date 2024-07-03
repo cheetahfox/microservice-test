@@ -4,7 +4,7 @@ go 1.17
 
 require (
 	github.com/ansrivas/fiberprometheus/v2 v2.4.1
-	github.com/gofiber/fiber/v2 v2.52.1
+	github.com/gofiber/fiber/v2 v2.52.5
 )
 
 require (
